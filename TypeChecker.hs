@@ -201,22 +201,13 @@ type ConsolidatedConstraints = TypeConstraints
 --       In this case, return all the type constraints from unifying the parameters
 --       and return types.
 unify :: Type -> Type -> Maybe TypeConstraints
-unify (TypeVar s1) t2 = Just (Set.fromList [(TypeVar s1, t2)])
-unify t1 (TypeVar s2) = Just (Set.fromList [(t1, TypeVar s2)])
+unify t1@(TypeVar _) t2 = Just (Set.fromList [(t1, t2)])
+unify t1 t2@(TypeVar _) = Just (Set.fromList [(t1, t2)])
 unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
 unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
-    then
-      let pPairs = zip p1 p2
-          constraints = foldl (\acc (x,y) ->
-            case unify x y of
-              Nothing -> Nothing
-              _ -> (unify x y)) (Just Set.empty) pPairs
-      in
-        case constraints of
-          Nothing -> Nothing
-          _ -> constraints
+    then foldl (\acc (x,y) -> (unify x y)) (Just Set.empty) (zip p1 p2)
     else Nothing
 unify t1 t2 = Nothing
 
