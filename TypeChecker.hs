@@ -209,29 +209,27 @@ unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
     then
       let pPairs = zip p1 p2
-          cons = foldl (\acc (x,y) ->
+          constraints = foldl (\acc (x,y) ->
             case unify x y of
               Nothing -> Nothing
               _ -> (unify x y)) (Just Set.empty) pPairs
       in
-        case cons of
+        case constraints of
           Nothing -> Nothing
-          _ -> cons
+          _ -> constraints
     else Nothing
 unify t1 t2 = Nothing
--- both function types
--- same # of params
--- matching params unify
--- returns unify
--- return all constraints
-
 
 -- | Takes the generated constraints and processs them.
 -- Returns `Nothing` if the constraints cannot be satisfied (this is a type error).
 -- Note that the returned value will depend on your representation of `ConstraintSets`.
 consolidate :: TypeConstraints -> Maybe ConsolidatedConstraints
-consolidate constraints = undefined
-
+consolidate constraints =
+  let constraintTypeVars = map (\(x, y) -> x) (Set.toList constraints)
+  in
+    if (Set.toList (Set.fromList constraintTypeVars)) == constraintTypeVars
+      then Just constraints
+      else Nothing
 
 -- | Takes the consolidated constraints and a type, and returns a
 -- new type obtained by replacing any type variables in the input type
