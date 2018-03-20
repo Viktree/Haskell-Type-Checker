@@ -184,7 +184,7 @@ type TypeConstraint = (Type, Type)
 type TypeConstraints = Set.Set TypeConstraint
 
 -- You should choose a different name representation for this type, or remove it entirely.
-type ConsolidatedConstraints = TypeConstraints
+type ConsolidatedConstraints = Map.Map Type Type
 
 
 -- | This is the main unification function.
@@ -219,7 +219,7 @@ consolidate constraints =
   let constraintTypeVars = map (\(x, y) -> x) (Set.toList constraints)
   in
     if (Set.toList (Set.fromList constraintTypeVars)) == constraintTypeVars
-      then Just constraints
+      then Just (Map.fromList (Set.toList constraints))
       else Nothing
 
 -- | Takes the consolidated constraints and a type, and returns a
@@ -230,7 +230,11 @@ consolidate constraints =
 resolve :: ConsolidatedConstraints -> Type -> Type
 resolve _ Int_                              = Int_
 resolve _ Bool_                             = Bool_
-resolve constraints t@(TypeVar _)           = undefined
+resolve constraints t@(TypeVar _)           =
+  case Map.lookup t constraints of
+    Nothing -> t
+    Just ret -> ret
+
 -- Don't forget about this case: the function type might contain
 -- type variables.
 resolve constraints (Function params rType) = undefined
