@@ -219,14 +219,11 @@ unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
 unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
-    then foldl (\acc (x,y) ->
-      let u = unify x y
-      in
-        case u of
-          Nothing -> Nothing
-          Just uCons -> case acc of
-            Nothing -> Nothing
-            Just accCons -> Just (Set.union accCons uCons)) (Just Set.empty) (zip (r1:p1) (r2:p2))
+    then foldl (\acc (x,y) -> do
+      u <- (unify x y)
+      a <- id acc
+      Just (Set.union a u))
+      (Just Set.empty) (zip (r1:p1) (r2:p2))
     else Nothing
 unify _ _ = Nothing
 
