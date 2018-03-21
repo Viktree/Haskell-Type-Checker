@@ -91,6 +91,11 @@ test_UnifyFunctionCanUnifyLonger =
     (Function [(TypeVar "a"), (TypeVar "b")] Int_)
     (Function [Int_, Int_] Int_)) ==
     Just (Set.fromList [(TypeVar "a", Int_), (TypeVar "b", Int_)])
+test_UnifyFunctionCanUnifyEvenLonger =
+  (unify
+    (Function [(TypeVar "a"), (TypeVar "b"), (TypeVar "c")] (TypeVar "r"))
+    (Function [Int_, Int_, Bool_] Bool_)) ==
+    Just (Set.fromList [(TypeVar "r", Bool_), (TypeVar "a", Int_), (TypeVar "b", Int_), (TypeVar "c", Bool_)])
 
 main :: IO ()
 main = do
@@ -110,3 +115,4 @@ main = do
     quickCheck test_UnifyPrimitivesBool
     quickCheck test_UnifyFunctionCanUnifySimple
     quickCheck test_UnifyFunctionCanUnifyLonger
+    quickCheck test_UnifyFunctionCanUnifyEvenLonger
