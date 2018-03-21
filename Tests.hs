@@ -1,5 +1,6 @@
 import           Test.QuickCheck (quickCheck)
 import           TypeChecker
+import           Data.Set                       as Set
 
 -- Expected error messages. DON'T CHANGE THESE!
 errorIfBranches = "Type error: the two branches of an `if` must have the same type."
@@ -67,6 +68,29 @@ test_DefineTwo =
         (If (Identifier "y") (Identifier "x") (IntLiteral 3))) ==
     Right Int_
 
+{- unify
+- t1 is a TypeVar, t2 is not
+- t2 is a TypeVar, t1 is not
+- t1 and t2 are Int_
+- t1 and t2 are Bool_
+- t1 and t2 are Function types
+-}
+test_UnifyT1TypeVar =
+  (unify (TypeVar "a") Int_) == Just (Set.fromList [(TypeVar "a", Int_)])
+test_UnifyT2TypeVar =
+  (unify Bool_ (TypeVar "b")) == Just (Set.fromList [(Bool_, TypeVar "b")])
+test_UnifyPrimitivesInt =
+  (unify Int_ Int_) == Just Set.empty
+test_UnifyPrimitivesBool =
+  (unify Bool_ Bool_) == Just Set.empty
+test_UnifyFunctionCanUnifySimple =
+  (unify (Function [(TypeVar "a")] Int_) (Function [Int_] Int_)) ==
+    Just (Set.fromList [(TypeVar "a", Int_)])
+test_UnifyFunctionCanUnifyLonger =
+  (unify
+    (Function [(TypeVar "a"), (TypeVar "b")] Int_)
+    (Function [Int_, Int_] Int_)) ==
+    Just (Set.fromList [(TypeVar "a", Int_), (TypeVar "b", Int_)])
 
 main :: IO ()
 main = do
@@ -80,3 +104,9 @@ main = do
     quickCheck test_CallWrongArgType
     quickCheck test_DefineOne
     quickCheck test_DefineTwo
+    quickCheck test_UnifyT1TypeVar
+    quickCheck test_UnifyT2TypeVar
+    quickCheck test_UnifyPrimitivesInt
+    quickCheck test_UnifyPrimitivesBool
+    quickCheck test_UnifyFunctionCanUnifySimple
+    quickCheck test_UnifyFunctionCanUnifyLonger

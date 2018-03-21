@@ -9,7 +9,19 @@ found on the exercise.
 -}
 
 -- The module definition line, including exports. Don't change this!
+
+{- CHANGE TO THIS UPON SUBMISSION
 module TypeChecker (runTypeCheck,
+                    Prog(..),
+                    Expr(..),
+                    Type(..),
+                    TypeCheckResult) where
+-}
+
+-- REMOVE UPON SUBMISSION
+module TypeChecker (runTypeCheck,
+                    unify,
+                    consolidate,
                     Prog(..),
                     Expr(..),
                     Type(..),
@@ -207,9 +219,9 @@ unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
 unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
-    then foldl (\acc (x,y) -> (unify x y)) (Just Set.empty) (zip p1 p2)
+    then foldl (\acc (x,y) -> unify x y) (Just Set.empty) (zip (r1:p1) (r2:p2))
     else Nothing
-unify t1 t2 = Nothing
+unify _ _ = Nothing
 
 -- | Takes the generated constraints and processs them.
 -- Returns `Nothing` if the constraints cannot be satisfied (this is a type error).
