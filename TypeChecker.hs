@@ -142,10 +142,22 @@ typeCheck env (Call f args) =
         Identifier _ -> do
             (Function requiredArgs functionReturn) <- typeCheck env f
             if length args == length requiredArgs
-            then
-                if map Right requiredArgs == map (typeCheck env) args
-                then Right functionReturn
-                else Left errorCallWrongArgType
+            then do
+              let aTypes = (map (\a ->
+                    case (typeCheck env a) of
+                      Right aType -> aType) args)
+                  mu = map (\(p, a) -> unify p a) (zip requiredArgs aTypes)
+                  mc = map (\u -> u >>= consolidate) mu
+                  r = map (\(mc, p) -> mc >>= (\c -> Just (resolve c p)))
+                    (zip mc requiredArgs)
+                  p = map (\param ->
+                    case param of
+                      Just t -> t
+                      Nothing -> TypeVar "t") r
+                in
+                  if p == aTypes
+                  then Right functionReturn
+                  else Left errorCallWrongArgType
             else Left errorCallWrongArgNumber
         _            -> Left errorCallNotAFunction
 
