@@ -143,7 +143,7 @@ typeCheck env (Call f args) =
             (Function requiredArgs functionReturn) <- typeCheck env f
             if length args == length requiredArgs
             then do
-              let aTypes = (map (\a ->
+              let aTypes = (map (\a ->          -- definitely a bit wrong here but works for one test case
                     case (typeCheck env a) of
                       Right aType -> aType) args)
                   mu = map (\(p, a) -> unify p a) (zip requiredArgs aTypes)
@@ -153,7 +153,7 @@ typeCheck env (Call f args) =
                   p = map (\param ->
                     case param of
                       Just t -> t
-                      Nothing -> TypeVar "t") r
+                      Nothing -> TypeVar "t") r -- Need to handle this instead of placeholder TypeVar
                 in
                   if p == aTypes
                   then Right functionReturn
