@@ -220,8 +220,8 @@ unify Bool_ Bool_ = Just Set.empty
 unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
     then foldl (\acc (x,y) -> do
-      u <- (unify x y)
-      a <- id acc
+      u <- unify x y
+      a <- acc
       Just (Set.union a u))
       (Just Set.empty) (zip (r1:p1) (r2:p2))
     else Nothing
@@ -232,11 +232,11 @@ unify _ _ = Nothing
 -- Note that the returned value will depend on your representation of `ConstraintSets`.
 consolidate :: TypeConstraints -> Maybe ConsolidatedConstraints
 consolidate constraints =
-  let constraintTypeVars = map (\(x, y) -> x) (Set.toList constraints)
+  let constraintTypeVars = map fst (Set.toList constraints)
   in
-    if (Set.toList (Set.fromList constraintTypeVars)) == constraintTypeVars
-      then Just (Map.fromList (Set.toList constraints))
-      else Nothing
+    if Set.toList (Set.fromList constraintTypeVars) == constraintTypeVars
+    then Just (Map.fromList (Set.toList constraints))
+    else Nothing
 
 -- | Takes the consolidated constraints and a type, and returns a
 -- new type obtained by replacing any type variables in the input type
@@ -248,7 +248,7 @@ resolve _ Int_                              = Int_
 resolve _ Bool_                             = Bool_
 resolve constraints t@(TypeVar _)           =
   case Map.lookup t constraints of
-    Nothing -> t
+    Nothing  -> t
     Just ret -> ret
 
 -- Don't forget about this case: the function type might contain
