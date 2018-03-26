@@ -142,10 +142,33 @@ typeCheck env (Call f args) =
         Identifier _ -> do
             (Function requiredArgs functionReturn) <- typeCheck env f
             if length args == length requiredArgs
-            then
-                if map Right requiredArgs == map (typeCheck env) args
-                then Right functionReturn
-                else Left errorCallWrongArgType
+            then do
+              let aTypes = map
+                    (\a -> case typeCheck env a of
+                      Left err -> Nothing
+                      Right t -> Just t)
+                    args
+                  mu = map
+                        (\(p, ma) -> ma >>= (\a -> unify p a))
+                        (zip requiredArgs aTypes)
+                  mc = map (\u -> u >>= consolidate) mu
+                  r = map (\(mc, p) -> mc >>= (\c -> Just (resolve c p)))
+                    (zip mc requiredArgs)
+                in
+                  if r == aTypes
+                  then
+                    case functionReturn of
+                      (TypeVar t) ->
+                          let cons = (foldl (\acc m ->
+                                      case m of
+                                        Just c -> Map.union acc c
+                                        _ -> acc) Map.empty mc)
+                          in
+                            case Map.lookup (TypeVar t) cons of
+                              Just t -> Right t
+                              ret -> Left (show ret)
+                      _ -> Right functionReturn
+                  else Left errorCallWrongArgType
             else Left errorCallWrongArgNumber
         _            -> Left errorCallNotAFunction
 
@@ -248,7 +271,7 @@ resolve _ Int_                              = Int_
 resolve _ Bool_                             = Bool_
 resolve constraints t@(TypeVar _)           =
   case Map.lookup t constraints of
-    Nothing  -> t
+    Just newT@(TypeVar _) -> resolve constraints newT
     Just ret -> ret
 
 -- Don't forget about this case: the function type might contain
