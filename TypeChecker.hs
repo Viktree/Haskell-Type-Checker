@@ -68,6 +68,16 @@ data Type
 nameToTypeVar :: String -> Type
 nameToTypeVar label = TypeVar $ "tvar_" ++ label
 
+transformEitherMaybe :: Either a b -> Maybe b
+transformEitherMaybe (Left  _)   = Nothing
+transformEitherMaybe (Right val) = Just val
+
+filterDefinateConstraints :: (Foldable t) => t (Maybe ConstraintMap) -> ConstraintMap
+filterDefinateConstraints = foldl
+    (\acc m -> case m of
+        Just c -> Map.union acc c
+        _      -> acc)
+    Map.empty
 
 type TypeEnv = Map.Map String Type
 
@@ -137,42 +147,30 @@ typeCheck env (If c t e) = do
         else Left errorIfBranches
     else Left errorIfCondition
 
-typeCheck env (Call f args) =
-    case f of
-        Identifier _ -> do
-            (Function requiredArgs functionReturn) <- typeCheck env f
-            if length args == length requiredArgs
-            then do
-              let aTypes = map
-                    (\a -> case typeCheck env a of
-                      Left err -> Nothing
-                      Right t -> Just t)
-                    args
-                  mu = map
-                        (\(p, ma) -> ma >>= (\a -> unify p a))
-                        (zip requiredArgs aTypes)
-                  mc = map (\u -> u >>= consolidate) mu
-                  r = map (\(mc, p) -> mc >>= (\c -> Just (resolve c p)))
-                    (zip mc requiredArgs)
-                in
-                  if r == aTypes
-                  then
-                    case functionReturn of
-                      (TypeVar t) ->
-                          let cons = (foldl (\acc m ->
-                                      case m of
-                                        Just c -> Map.union acc c
-                                        _ -> acc) Map.empty mc)
-                          in
-                            case Map.lookup (TypeVar t) cons of
-                              Just t -> Right t
-                              ret -> Left (show ret)
-                      _ -> Right functionReturn
-                  else Left errorCallWrongArgType
-            else Left errorCallWrongArgNumber
-        _            -> Left errorCallNotAFunction
+typeCheck env (Call f@(Identifier _) args) = do
+    (Function reqArgs functionReturn) <- typeCheck env f
+    if length args == length reqArgs
+    then let
+        aTypes = map (transformEitherMaybe . typeCheck env) args
+        mu = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
+        resolved  = map (\(mc, p) -> mc >>= (\c -> Just $ resolve c p)) (zip mu reqArgs)
+        in if resolved == aTypes
+            then case functionReturn of
+                p@(TypeVar _) ->
+                    case Map.lookup p (filterDefinateConstraints mu) of
+                        Just val -> Right val
+                        ret      -> Left (show ret)
+                _ -> Right functionReturn
+            else Left errorCallWrongArgType
+    else Left errorCallWrongArgNumber
 
-typeCheck env (Lambda names body) = undefined
+typeCheck _ (Call _ _) = Left errorCallNotAFunction
+
+typeCheck env (Lambda names body) = do
+    retType  <- typeCheck env body
+    let argTypes = [TypeVar x | x <- names]
+    Right $ Function argTypes retType
+
 
 buildTypeEnv :: TypeEnv -> [(String, Expr)] -> Either String TypeEnv
 buildTypeEnv env = foldl buildTypeEnvHelper (Right env)
@@ -219,7 +217,7 @@ type TypeConstraint = (Type, Type)
 type TypeConstraints = Set.Set TypeConstraint
 
 -- You should choose a different name representation for this type, or remove it entirely.
-type ConsolidatedConstraints = Map.Map Type Type
+type ConstraintMap = Map.Map Type Type
 
 
 -- | This is the main unification function.
@@ -253,7 +251,7 @@ unify _ _ = Nothing
 -- | Takes the generated constraints and processs them.
 -- Returns `Nothing` if the constraints cannot be satisfied (this is a type error).
 -- Note that the returned value will depend on your representation of `ConstraintSets`.
-consolidate :: TypeConstraints -> Maybe ConsolidatedConstraints
+consolidate :: TypeConstraints -> Maybe ConstraintMap
 consolidate constraints =
   let constraintTypeVars = map fst (Set.toList constraints)
   in
@@ -266,13 +264,13 @@ consolidate constraints =
 -- based on the given constraints.
 -- Note: if there are no constraints on a type variable, you should
 -- simply return the type variable (it remains generic).
-resolve :: ConsolidatedConstraints -> Type -> Type
+resolve :: ConstraintMap -> Type -> Type
 resolve _ Int_                              = Int_
 resolve _ Bool_                             = Bool_
 resolve constraints t@(TypeVar _)           =
   case Map.lookup t constraints of
     Just newT@(TypeVar _) -> resolve constraints newT
-    Just ret -> ret
+    Just ret              -> ret
 
 -- Don't forget about this case: the function type might contain
 -- type variables.

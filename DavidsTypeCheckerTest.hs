@@ -1,12 +1,9 @@
 {- CSC324 Winter 2018: Assignment 2 Sample tests -}
 
-import Data.Either (isLeft)
-import TypeChecker (runTypeCheck,
-                    Prog(..),
-                    Expr(..),
-                    Type(..),
-                    TypeCheckResult)
-import Test.QuickCheck (quickCheck, label)
+import           Data.Either     (isLeft)
+import           Test.QuickCheck (label, quickCheck)
+import           TypeChecker     (Expr (..), Prog (..), Type (..),
+                                  TypeCheckResult, runTypeCheck)
 
 errorIfBranches = "Type error: the two branches of an `if` must have the same type."
 errorIfCondition = "Type error: the condition of an `if` must be boolean."
@@ -127,7 +124,7 @@ test_Lambda =
 test_LambdaId =
     case runTypeCheck (JustExpr $ Lambda ["x"] (Identifier "x")) of
         Right (Function [TypeVar a] (TypeVar b)) -> a == b
-        _ -> False
+        _                                        -> False
 
 test_LambdaIf =
     case runTypeCheck (JustExpr $
