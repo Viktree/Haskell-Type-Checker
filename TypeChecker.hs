@@ -244,7 +244,7 @@ unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
     then foldl (\acc (x,y) -> do
       u <- unify x y
-      a <- id acc
+      a <- acc
       Just (Set.union a u))
       (Just Set.empty) (zip (r1:p1) (r2:p2))
     else Nothing
