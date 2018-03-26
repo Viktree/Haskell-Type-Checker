@@ -143,19 +143,19 @@ typeCheck env (Call f args) =
             (Function requiredArgs functionReturn) <- typeCheck env f
             if length args == length requiredArgs
             then do
-              let aTypes = (map (\a ->          -- definitely a bit wrong here but works for one test case
-                    case (typeCheck env a) of
-                      Right aType -> aType) args)
-                  mu = map (\(p, a) -> unify p a) (zip requiredArgs aTypes)
+              let aTypes = map
+                    (\a -> case typeCheck env a of
+                      Left err -> Nothing
+                      Right t -> Just t)
+                    args
+                  mu = map
+                        (\(p, ma) -> ma >>= (\a -> unify p a))
+                        (zip requiredArgs aTypes)
                   mc = map (\u -> u >>= consolidate) mu
                   r = map (\(mc, p) -> mc >>= (\c -> Just (resolve c p)))
                     (zip mc requiredArgs)
-                  p = map (\param ->
-                    case param of
-                      Just t -> t
-                      Nothing -> TypeVar "t") r -- Need to handle this instead of placeholder TypeVar
                 in
-                  if p == aTypes
+                  if r == aTypes
                   then Right functionReturn
                   else Left errorCallWrongArgType
             else Left errorCallWrongArgNumber
@@ -232,7 +232,7 @@ unify Bool_ Bool_ = Just Set.empty
 unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
     then foldl (\acc (x,y) -> do
-      u <- (unify x y)
+      u <- unify x y
       a <- id acc
       Just (Set.union a u))
       (Just Set.empty) (zip (r1:p1) (r2:p2))
@@ -244,11 +244,11 @@ unify _ _ = Nothing
 -- Note that the returned value will depend on your representation of `ConstraintSets`.
 consolidate :: TypeConstraints -> Maybe ConsolidatedConstraints
 consolidate constraints =
-  let constraintTypeVars = map (\(x, y) -> x) (Set.toList constraints)
+  let constraintTypeVars = map fst (Set.toList constraints)
   in
-    if (Set.toList (Set.fromList constraintTypeVars)) == constraintTypeVars
-      then Just (Map.fromList (Set.toList constraints))
-      else Nothing
+    if Set.toList (Set.fromList constraintTypeVars) == constraintTypeVars
+    then Just (Map.fromList (Set.toList constraints))
+    else Nothing
 
 -- | Takes the consolidated constraints and a type, and returns a
 -- new type obtained by replacing any type variables in the input type
@@ -260,7 +260,7 @@ resolve _ Int_                              = Int_
 resolve _ Bool_                             = Bool_
 resolve constraints t@(TypeVar _)           =
   case Map.lookup t constraints of
-    Nothing -> t
+    Nothing  -> t
     Just ret -> ret
 
 -- Don't forget about this case: the function type might contain
