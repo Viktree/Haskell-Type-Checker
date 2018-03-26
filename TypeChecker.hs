@@ -152,14 +152,15 @@ typeCheck env (Call f@(Identifier _) args) = do
     if length args == length reqArgs
     then let
         aTypes = map (transformEitherMaybe . typeCheck env) args
-        mu = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
-        resolved  = map (\(mc, p) -> mc >>= (\c -> Just $ resolve c p)) (zip mu reqArgs)
-        in if resolved == aTypes
+        mu1 = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
+        mu2 = filterDefinateConstraints mu1
+        resolved  = map (resolve mu2) reqArgs
+        in if (map Just resolved) == aTypes
             then case functionReturn of
                 p@(TypeVar _) ->
-                    case Map.lookup p (filterDefinateConstraints mu) of
+                    case Map.lookup p mu2 of
                         Just val -> Right val
-                        ret      -> Left (show ret)
+                        Nothing  -> Left errorUnboundIdentifier
                 _ -> Right functionReturn
             else Left errorCallWrongArgType
     else Left errorCallWrongArgNumber
@@ -238,6 +239,12 @@ unify t1@(TypeVar _) t2 = Just (Set.fromList [(t1, t2)])
 unify t1 t2@(TypeVar _) = Just (Set.fromList [(t1, t2)])
 unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
+unify Int_ Bool_ = do
+  _ <- return (show "int bool")
+  Nothing
+unify Bool_ Int_ = do
+  _ <- return (show "bool int")
+  Nothing
 unify (Function p1 r1) (Function p2 r2) =
   if length p1 == length p2
     then foldl (\acc (x,y) -> do
@@ -274,4 +281,5 @@ resolve constraints t@(TypeVar _)           =
 
 -- Don't forget about this case: the function type might contain
 -- type variables.
-resolve constraints (Function params rType) = undefined
+resolve constraints (Function params rType) =
+  (Function (map (resolve constraints) params) (resolve constraints rType))

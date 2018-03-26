@@ -112,6 +112,10 @@ test_ApplyWrongArgType =
     -- Note: this is *also* a wrong arg type error!
     Left errorCallWrongArgType
 
+test_Apply =
+    runTypeCheck (JustExpr $
+        Call (Identifier "apply") [Identifier "not", BoolLiteral True]) ==
+    Right Bool_
 
 -------------------------------------------------------------------------------
 -- | A2 Part 2 sample tests
@@ -170,6 +174,7 @@ main = do
     doTest "identity: monomorphic (non-polymorphic) function type (sample test)" test_Id
     doTest "identity: polymorphic function type (apply) (sample test)" test_IdApply
     doTest "apply: called with a second argument that's incompatible with the first (sample test)" test_ApplyWrongArgType
+    doTest "apply: called with compatible arguments" test_Apply
 
     doTest "lambda: basic type inference (sample test)" test_Lambda
     doTest "lambda: type inference for the identity function (\\x -> x)" test_LambdaId
