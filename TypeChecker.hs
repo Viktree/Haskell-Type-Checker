@@ -156,10 +156,10 @@ typeCheck env (Call f@(Identifier _) args) = do
     (Function reqArgs functionReturn, _) <- typeCheck env f
     if length args == length reqArgs
     then let
-        checkArgs = transformEitherMaybe (\y -> do
+        checkArgs = (\y -> do
                       (t, cons) <- (typeCheck env y)
                       return t)
-        aTypes = map checkArgs args
+        aTypes = map transformEitherMaybe (map checkArgs args)
         mu1 = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
         mu2 = filterDefinateConstraints mu1
         resolved  = map (resolve mu2) reqArgs
