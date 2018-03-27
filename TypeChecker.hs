@@ -163,7 +163,8 @@ typeCheck env (Call f@(Identifier _) args) = do
         mu1 = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
         mu2 = filterDefinateConstraints mu1
         resolved  = map (resolve mu2) reqArgs
-        in if (map Just resolved) == aTypes
+        aTypeResolved = map (\a -> a >>= (\x -> Just (resolve mu2 x))) aTypes
+        in if (map Just resolved) == aTypeResolved
             then case functionReturn of
                 p@(TypeVar _) ->
                     case Map.lookup p mu2 of
@@ -176,10 +177,10 @@ typeCheck env (Call f@(Identifier _) args) = do
 typeCheck _ (Call _ _) = Left errorCallNotAFunction
 
 typeCheck env (Lambda names body) = do
-    (retType, cons)  <- typeCheck env body
     let argTypes = [nameToTypeVar x | x <- names]
+        newEnv = Map.union env (Map.fromList (zip names argTypes))
+    (retType, cons)  <- typeCheck newEnv body
     Right (Function argTypes retType, cons)
-
 
 buildTypeEnv :: TypeEnv -> [(String, Expr)] -> Either String TypeEnv
 buildTypeEnv env = foldl buildTypeEnvHelper (Right env)
@@ -286,6 +287,7 @@ resolve constraints t@(TypeVar _)           =
   case Map.lookup t constraints of
     Just newT@(TypeVar _) -> resolve constraints newT
     Just ret              -> ret
+    Nothing               -> t
 
 -- Don't forget about this case: the function type might contain
 -- type variables.
