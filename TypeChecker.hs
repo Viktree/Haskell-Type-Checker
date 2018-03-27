@@ -105,6 +105,7 @@ builtins = Map.fromList
 
 
 type TypeCheckResult = Either String Type
+type TCR2 = Either String (Type, Map.Map Type Type)
 
 -- Expected error messages. DON'T CHANGE THESE!
 errorIfBranches = "Type error: the two branches of an `if` must have the same type."
@@ -120,38 +121,45 @@ errorTypeUnification = "Type error: inconsistent set of type constraints generat
 -- | Entry point to the type-checking. We've implemented this for you (though you will
 -- probably need to change over the course of the assignment).
 runTypeCheck :: Prog -> TypeCheckResult
-runTypeCheck (JustExpr expr) = typeCheck builtins expr
+runTypeCheck (JustExpr expr) = case typeCheck builtins expr of
+                                Left err -> Left err
+                                Right ret -> Right (fst ret)
 runTypeCheck (WithDefines definitions expr) =
     case buildTypeEnv builtins definitions of
         Left msg     -> Left msg
-        Right newEnv -> typeCheck newEnv expr
+        Right newEnv -> case typeCheck newEnv expr of
+                          Left err -> Left err
+                          Right ret -> Right (fst ret)
 
 
 -- | The "core" type-checking function.
-typeCheck :: TypeEnv -> Expr -> TypeCheckResult
-typeCheck _ (IntLiteral _) = Right Int_
-typeCheck _ (BoolLiteral _) = Right Bool_
+typeCheck :: TypeEnv -> Expr -> TCR2
+typeCheck _ (IntLiteral _) = Right (Int_, Map.empty)
+typeCheck _ (BoolLiteral _) = Right (Bool_, Map.empty)
 typeCheck env (Identifier s) =
     case Map.lookup s env of
         Nothing -> Left errorUnboundIdentifier
-        Just t  -> Right t
+        Just t  -> Right (t, Map.empty)
 
 typeCheck env (If c t e) = do
-    ifType <- typeCheck env c
+    (ifType, _) <- typeCheck env c
     if ifType == Bool_
     then do
-        firstType  <- typeCheck env t
-        secondType <- typeCheck env e
+        (firstType, fcons)  <- typeCheck env t
+        (secondType, scons) <- typeCheck env e
         if firstType == secondType
-        then Right firstType
+        then Right (firstType, Map.union scons (Map.union fcons (Map.fromList [(firstType, secondType), (ifType, Bool_)])))
         else Left errorIfBranches
     else Left errorIfCondition
 
 typeCheck env (Call f@(Identifier _) args) = do
-    (Function reqArgs functionReturn) <- typeCheck env f
+    (Function reqArgs functionReturn, _) <- typeCheck env f
     if length args == length reqArgs
     then let
-        aTypes = map (transformEitherMaybe . typeCheck env) args
+        checkArgs = transformEitherMaybe (\y -> do
+                      (t, cons) <- (typeCheck env y)
+                      return t)
+        aTypes = map checkArgs args
         mu1 = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
         mu2 = filterDefinateConstraints mu1
         resolved  = map (resolve mu2) reqArgs
@@ -159,18 +167,18 @@ typeCheck env (Call f@(Identifier _) args) = do
             then case functionReturn of
                 p@(TypeVar _) ->
                     case Map.lookup p mu2 of
-                        Just val -> Right val
+                        Just val -> Right (val, mu2)
                         Nothing  -> Left errorUnboundIdentifier
-                _ -> Right functionReturn
+                _ -> Right (functionReturn, mu2)
             else Left errorCallWrongArgType
     else Left errorCallWrongArgNumber
 
 typeCheck _ (Call _ _) = Left errorCallNotAFunction
 
 typeCheck env (Lambda names body) = do
-    retType  <- typeCheck env body
-    let argTypes = [TypeVar x | x <- names]
-    Right $ Function argTypes retType
+    (retType, cons)  <- typeCheck env body
+    let argTypes = [nameToTypeVar x | x <- names]
+    Right (Function argTypes retType, cons)
 
 
 buildTypeEnv :: TypeEnv -> [(String, Expr)] -> Either String TypeEnv
@@ -179,7 +187,7 @@ buildTypeEnv env = foldl buildTypeEnvHelper (Right env)
 buildTypeEnvHelper :: Either String TypeEnv -> (String, Expr) -> Either String TypeEnv
 buildTypeEnvHelper safeEnv (val, valType) = do
     env <- safeEnv
-    valTypeEvaluated <- typeCheck env valType
+    (valTypeEvaluated, _) <- typeCheck env valType
     Right (Map.insert val valTypeEvaluated env)
 
 
