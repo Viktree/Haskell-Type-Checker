@@ -72,6 +72,10 @@ transformEitherMaybe :: Either a b -> Maybe b
 transformEitherMaybe (Left  _)   = Nothing
 transformEitherMaybe (Right val) = Just val
 
+isTypeVar :: Type -> Bool
+isTypeVar (TypeVar _) = True
+isTypeVar _           = False
+
 filterDefinateConstraints :: (Foldable t) => t (Maybe ConstraintMap) -> ConstraintMap
 filterDefinateConstraints = foldl
     (\acc m -> case m of
@@ -122,14 +126,15 @@ errorTypeUnification = "Type error: inconsistent set of type constraints generat
 -- probably need to change over the course of the assignment).
 runTypeCheck :: Prog -> TypeCheckResult
 runTypeCheck (JustExpr expr) = case typeCheck builtins expr of
-                                Left err -> Left err
-                                Right ret -> Right (fst ret)
+    Left err  -> Left err
+    Right ret -> Right (fst ret)
+
 runTypeCheck (WithDefines definitions expr) =
     case buildTypeEnv builtins definitions of
         Left msg     -> Left msg
         Right newEnv -> case typeCheck newEnv expr of
-                          Left err -> Left err
-                          Right ret -> Right (fst ret)
+            Left err  -> Left err
+            Right ret -> Right (fst ret)
 
 
 -- | The "core" type-checking function.
@@ -143,12 +148,15 @@ typeCheck env (Identifier s) =
 
 typeCheck env (If c t e) = do
     (ifType, _) <- typeCheck env c
-    if ifType == Bool_
+    if ifType == Bool_ || isTypeVar ifType
     then do
-        (firstType, fcons)  <- typeCheck env t
-        (secondType, scons) <- typeCheck env e
-        if firstType == secondType
-        then Right (firstType, Map.union scons (Map.union fcons (Map.fromList [(firstType, secondType), (ifType, Bool_)])))
+        (rawFirstType, fcons)  <- typeCheck env t
+        (rawSecondType, scons) <- typeCheck env e
+        let newEnv = Map.union scons (Map.union fcons (Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]))
+            resolvedFirstType = resolve newEnv rawFirstType
+            resolvedSecondType = resolve newEnv rawSecondType
+        if resolvedFirstType == resolvedSecondType
+        then Right (resolvedFirstType, newEnv)
         else Left errorIfBranches
     else Left errorIfCondition
 
@@ -156,15 +164,14 @@ typeCheck env (Call f@(Identifier _) args) = do
     (Function reqArgs functionReturn, _) <- typeCheck env f
     if length args == length reqArgs
     then let
-        checkArgs = (\y -> do
-                      (t, cons) <- (typeCheck env y)
-                      return t)
-        aTypes = map transformEitherMaybe (map checkArgs args)
+        checkArgs y = do
+            (t, _) <- typeCheck env y
+            return t
+        aTypes = map (transformEitherMaybe . checkArgs) args
         mu1 = map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
         mu2 = filterDefinateConstraints mu1
         resolved  = map (resolve mu2) reqArgs
-        aTypeResolved = map (\a -> a >>= (\x -> Just (resolve mu2 x))) aTypes
-        in if (map Just resolved) == aTypeResolved
+        in if map Just resolved == aTypes
             then case functionReturn of
                 p@(TypeVar _) ->
                     case Map.lookup p mu2 of
@@ -180,7 +187,9 @@ typeCheck env (Lambda names body) = do
     let argTypes = [nameToTypeVar x | x <- names]
         newEnv = Map.union env (Map.fromList (zip names argTypes))
     (retType, cons)  <- typeCheck newEnv body
-    Right (Function argTypes retType, cons)
+    let resolvedArgs = map (resolve cons) argTypes
+        resolvedRet = resolve cons retType
+    Right (Function resolvedArgs resolvedRet, cons)
 
 buildTypeEnv :: TypeEnv -> [(String, Expr)] -> Either String TypeEnv
 buildTypeEnv env = foldl buildTypeEnvHelper (Right env)
