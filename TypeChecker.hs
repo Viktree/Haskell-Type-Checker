@@ -9,19 +9,7 @@ found on the exercise.
 -}
 
 -- The module definition line, including exports. Don't change this!
-
-{- CHANGE TO THIS UPON SUBMISSION
 module TypeChecker (runTypeCheck,
-                    Prog(..),
-                    Expr(..),
-                    Type(..),
-                    TypeCheckResult) where
--}
-
--- REMOVE UPON SUBMISSION
-module TypeChecker (runTypeCheck,
-                    unify,
-                    consolidate,
                     Prog(..),
                     Expr(..),
                     Type(..),
@@ -68,10 +56,12 @@ data Type
 nameToTypeVar :: String -> Type
 nameToTypeVar label = TypeVar $ "tvar_" ++ label
 
+-- A function to 'convert' Eithers into Maybes
 transformEitherMaybe :: Either a b -> Maybe b
 transformEitherMaybe (Left  _)   = Nothing
 transformEitherMaybe (Right val) = Just val
 
+-- Collect the Maybe to outside a list, from Lab 10
 collectM :: Monad m => [m a] -> m [a]
 collectM = foldr
     (\ maybeVal maybeAcc -> do
@@ -80,12 +70,14 @@ collectM = foldr
        return $ val : acc)
     (return [])
 
+-- Checks if given Type is a TypeVar
 isTypeVar :: Type -> Bool
 isTypeVar (TypeVar _) = True
 isTypeVar _           = False
 
-filterDefinateConstraints :: (Foldable t) => t (Maybe ConstraintMap) -> ConstraintMap
-filterDefinateConstraints = foldl
+-- Accumulate a list of ConstraintMaps into one ConstraintMap
+filterDefiniteConstraints :: (Foldable t) => t (Maybe ConstraintMap) -> ConstraintMap
+filterDefiniteConstraints = foldl
     (\acc m -> case m of
         Just c -> Map.union acc c
         _      -> acc)
@@ -117,6 +109,8 @@ builtins = Map.fromList
 
 
 type TypeCheckResult = Either String Type
+
+-- The new TypeCheckResult' type for Task2
 type TCR2 = Either String (Type, Map.Map Type Type)
 
 -- Expected error messages. DON'T CHANGE THESE!
@@ -136,7 +130,7 @@ runTypeCheck :: Prog -> TypeCheckResult
 runTypeCheck (JustExpr expr) = case typeCheck builtins expr of
     Left err  -> Left err
     Right ret -> Right (fst ret)
-
+-- Modified here to handle Task2
 runTypeCheck (WithDefines definitions expr) =
     case buildTypeEnv builtins definitions of
         Left msg     -> Left msg
@@ -158,10 +152,12 @@ typeCheck env (If c t e) = do
     (ifType, _) <- typeCheck env c
     (rawFirstType, fcons)  <- typeCheck env t
     (rawSecondType, scons) <- typeCheck env e
+    -- Collects constraints
     let newEntries = Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]
         newEnv = Map.unions [scons, fcons, newEntries]
         resolvedFirstType = resolve newEnv rawFirstType
         resolvedSecondType = resolve newEnv rawSecondType
+    -- Check that if returns a boolean and that the branches are same type
     if ifType == Bool_ || isTypeVar ifType
     then if resolvedFirstType == resolvedSecondType
         then Right (resolvedFirstType, newEnv)
@@ -170,11 +166,13 @@ typeCheck env (If c t e) = do
 
 typeCheck env (Call f@(Identifier _) args) = do
     (Function reqArgs functionReturn, _) <- typeCheck env f
+    -- Check that the arguments and parameters are of same length
     if length args == length reqArgs
     then let
+        -- Check that arguments and parameters are of same type
         checkArgs y = typeCheck env y >>= (\(t, _) -> return t)
         aTypes = map (transformEitherMaybe . checkArgs) args
-        newEnv = filterDefinateConstraints $
+        newEnv = filterDefiniteConstraints $
             map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
         resolvedArgTypes = collectM aTypes >>= Just . map (resolve newEnv)
         resolved  = map (resolve newEnv) reqArgs
@@ -190,9 +188,12 @@ typeCheck env (Call f@(Identifier _) args) = do
 
 typeCheck _ (Call _ _) = Left errorCallNotAFunction
 
+-- Task 2 typechecking for lambda functions
 typeCheck env (Lambda names body) = do
+    -- Make an environment with 'fresh variables'
     let argTypes = [nameToTypeVar x | x <- names]
         tempEnv = Map.union env $ Map.fromList $ zip names argTypes
+    -- Typecheck the body with the environment with fresh variables
     (retType, newEnv)  <- typeCheck tempEnv body
     let resolvedArgs = map (resolve newEnv) argTypes
         resolvedRet = resolve newEnv retType
@@ -271,6 +272,7 @@ unify Bool_ Int_ = do
   _ <- return (show "bool int")
   Nothing
 unify (Function p1 r1) (Function p2 r2) =
+  -- Check parameters of equal length, unify their types
   if length p1 == length p2
     then foldl (\acc (x,y) -> do
       u <- unify x y
@@ -287,6 +289,7 @@ consolidate :: TypeConstraints -> Maybe ConstraintMap
 consolidate constraints =
   let constraintTypeVars = map fst (Set.toList constraints)
   in
+    -- If converting to set changes the length, we lost conflicting constraints
     if Set.toList (Set.fromList constraintTypeVars) == constraintTypeVars
     then Just (Map.fromList (Set.toList constraints))
     else Nothing
@@ -300,6 +303,7 @@ resolve :: ConstraintMap -> Type -> Type
 resolve _ Int_                              = Int_
 resolve _ Bool_                             = Bool_
 resolve constraints t@(TypeVar _)           =
+  -- Lookup and recursively resolve if needed, return type based on constraints
   case Map.lookup t constraints of
     Just newT@(TypeVar _) -> resolve constraints newT
     Just ret              -> ret
