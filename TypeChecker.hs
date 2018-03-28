@@ -150,17 +150,14 @@ typeCheck env (If c t e) = do
     (ifType, _) <- typeCheck env c
     (rawFirstType, fcons)  <- typeCheck env t
     (rawSecondType, scons) <- typeCheck env e
+    let newEntries = Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]
+        newEnv = Map.unions [scons, fcons, newEntries]
+        resolvedFirstType = resolve newEnv rawFirstType
+        resolvedSecondType = resolve newEnv rawSecondType
     if ifType == Bool_ || isTypeVar ifType
-    then
-        let
-            newEntries = Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]
-            newEnv = Map.unions [scons, fcons, newEntries]
-            resolvedFirstType = resolve newEnv rawFirstType
-            resolvedSecondType = resolve newEnv rawSecondType
-        in
-            if resolvedFirstType == resolvedSecondType
-            then Right (resolvedFirstType, newEnv)
-            else Left errorIfBranches
+    then if resolvedFirstType == resolvedSecondType
+        then Right (resolvedFirstType, newEnv)
+        else Left errorIfBranches
     else Left errorIfCondition
 
 typeCheck env (Call f@(Identifier _) args) = do
@@ -186,11 +183,11 @@ typeCheck _ (Call _ _) = Left errorCallNotAFunction
 
 typeCheck env (Lambda names body) = do
     let argTypes = [nameToTypeVar x | x <- names]
-        newEnv = Map.union env (Map.fromList (zip names argTypes))
-    (retType, cons)  <- typeCheck newEnv body
-    let resolvedArgs = map (resolve cons) argTypes
-        resolvedRet = resolve cons retType
-    Right (Function resolvedArgs resolvedRet, cons)
+        tempEnv = Map.union env $ Map.fromList $ zip names argTypes
+    (retType, newEnv)  <- typeCheck tempEnv body
+    let resolvedArgs = map (resolve newEnv) argTypes
+        resolvedRet = resolve newEnv retType
+    Right (Function resolvedArgs resolvedRet, newEnv)
 
 buildTypeEnv :: TypeEnv -> [(String, Expr)] -> Either String TypeEnv
 buildTypeEnv env = foldl buildTypeEnvHelper (Right env)
@@ -302,4 +299,4 @@ resolve constraints t@(TypeVar _)           =
 -- Don't forget about this case: the function type might contain
 -- type variables.
 resolve constraints (Function params rType) =
-  (Function (map (resolve constraints) params) (resolve constraints rType))
+  Function (map (resolve constraints) params) (resolve constraints rType)
