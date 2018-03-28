@@ -72,6 +72,14 @@ transformEitherMaybe :: Either a b -> Maybe b
 transformEitherMaybe (Left  _)   = Nothing
 transformEitherMaybe (Right val) = Just val
 
+collectM :: Monad m => [m a] -> m [a]
+collectM = foldr
+    (\ maybeVal maybeAcc -> do
+       val <- maybeVal
+       acc <- maybeAcc
+       return $ val : acc)
+    (return [])
+
 isTypeVar :: Type -> Bool
 isTypeVar (TypeVar _) = True
 isTypeVar _           = False
@@ -168,8 +176,9 @@ typeCheck env (Call f@(Identifier _) args) = do
         aTypes = map (transformEitherMaybe . checkArgs) args
         newEnv = filterDefinateConstraints $
             map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
+        resolvedArgTypes = collectM aTypes >>= Just . map (resolve newEnv)
         resolved  = map (resolve newEnv) reqArgs
-        in if map Just resolved == aTypes
+        in if Just resolved == resolvedArgTypes
             then case functionReturn of
                 p@(TypeVar _) ->
                     case Map.lookup p newEnv of
@@ -252,7 +261,7 @@ type ConstraintMap = Map.Map Type Type
 --       and return types.
 unify :: Type -> Type -> Maybe TypeConstraints
 unify t1@(TypeVar _) t2 = Just (Set.fromList [(t1, t2)])
-unify t1 t2@(TypeVar _) = Just (Set.fromList [(t1, t2)])
+unify t1 t2@(TypeVar _) = Just (Set.fromList [(t2, t1)])
 unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
 unify Int_ Bool_ = do
