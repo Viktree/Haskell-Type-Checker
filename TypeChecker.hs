@@ -150,17 +150,14 @@ typeCheck env (If c t e) = do
     (ifType, _) <- typeCheck env c
     (rawFirstType, fcons)  <- typeCheck env t
     (rawSecondType, scons) <- typeCheck env e
+    let newEntries = Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]
+        newEnv = Map.unions [scons, fcons, newEntries]
+        resolvedFirstType = resolve newEnv rawFirstType
+        resolvedSecondType = resolve newEnv rawSecondType
     if ifType == Bool_ || isTypeVar ifType
-    then
-        let
-            newEntries = Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]
-            newEnv = Map.unions [scons, fcons, newEntries]
-            resolvedFirstType = resolve newEnv rawFirstType
-            resolvedSecondType = resolve newEnv rawSecondType
-        in
-            if resolvedFirstType == resolvedSecondType
-            then Right (resolvedFirstType, newEnv)
-            else Left errorIfBranches
+    then if resolvedFirstType == resolvedSecondType
+        then Right (resolvedFirstType, newEnv)
+        else Left errorIfBranches
     else Left errorIfCondition
 
 typeCheck env (Call f@(Identifier _) args) = do
