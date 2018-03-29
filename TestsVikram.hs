@@ -153,7 +153,7 @@ test_CallWrongArgType x =
 test_SomeNastyLookingShit =
     runTypeCheck (JustExpr $ Lambda ["x", "y"] (Call (Identifier "and") [Call (Identifier "<") [Identifier "x", Identifier "y"], Call (Identifier "<") [Identifier "x", Identifier "y"]]))
     ==
-    Right (Function [TypeVar "tvar_x",TypeVar "tvar_y"] Bool_)
+    Right (Function [Int_, Int_] Bool_)
 
 
 test_DefineOne =
