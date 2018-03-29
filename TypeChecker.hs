@@ -56,11 +56,13 @@ data Type
 nameToTypeVar :: String -> Type
 nameToTypeVar label = TypeVar $ "tvar_" ++ label
 
--- A function to 'convert' Eithers into Maybes
+-- Helper function:
+-- 'Convert' Eithers into Maybes
 transformEitherMaybe :: Either a b -> Maybe b
 transformEitherMaybe (Left  _)   = Nothing
 transformEitherMaybe (Right val) = Just val
 
+-- Helper function:
 -- Collect the Maybe to outside a list, from Lab 10
 collectM :: Monad m => [m a] -> m [a]
 collectM = foldr
@@ -70,11 +72,13 @@ collectM = foldr
        return $ val : acc)
     (return [])
 
+-- Helper function:
 -- Checks if given Type is a TypeVar
 isTypeVar :: Type -> Bool
 isTypeVar (TypeVar _) = True
 isTypeVar _           = False
 
+-- Helper function
 -- Accumulate a list of ConstraintMaps into one ConstraintMap
 filterDefiniteConstraints :: (Foldable t) => t (Maybe ConstraintMap) -> ConstraintMap
 filterDefiniteConstraints = foldl
@@ -110,7 +114,10 @@ builtins = Map.fromList
 
 type TypeCheckResult = Either String Type
 
--- The new TypeCheckResult' type for Task2
+{-
+The new TypeCheckResult' type for Task2
+This format allows for propagating constraints throughout the program.
+-}
 type TCR2 = Either String (Type, Map.Map Type Type)
 
 -- Expected error messages. DON'T CHANGE THESE!
@@ -134,7 +141,7 @@ runTypeCheck (JustExpr expr) = case typeCheck builtins expr of
 runTypeCheck (WithDefines definitions expr) =
     case buildTypeEnv builtins definitions of
         Left msg     -> Left msg
-        Right newEnv -> case typeCheck newEnv expr of
+        Right newConstraints -> case typeCheck newConstraints expr of
             Left err  -> Left err
             Right ret -> Right (fst ret)
 
@@ -148,58 +155,71 @@ typeCheck env (Identifier s) =
         Nothing -> Left errorUnboundIdentifier
         Just t  -> Right (t, Map.empty)
 
+-- Handle If
 typeCheck env (If c t e) = do
     (ifType, _) <- typeCheck env c
     (rawFirstType, fcons)  <- typeCheck env t
     (rawSecondType, scons) <- typeCheck env e
-    -- Collects constraints
+    -- Collect constraints
     let newEntries = Map.fromList [(rawFirstType, rawSecondType), (ifType, Bool_)]
-        newEnv = Map.unions [scons, fcons, newEntries]
-        resolvedFirstType = resolve newEnv rawFirstType
-        resolvedSecondType = resolve newEnv rawSecondType
+        newConstraints = Map.unions [scons, fcons, newEntries]
+        resolvedFirstType = resolve newConstraints rawFirstType
+        resolvedSecondType = resolve newConstraints rawSecondType
     -- Check that if returns a boolean and that the branches are same type
     if ifType == Bool_ || isTypeVar ifType
     then if resolvedFirstType == resolvedSecondType
-        then Right (resolvedFirstType, newEnv)
+        then Right (resolvedFirstType, newConstraints)
         else Left errorIfBranches
     else Left errorIfCondition
 
+-- Handle Call
 typeCheck env (Call f@(Identifier _) args) = do
     (Function reqArgs functionReturn, _) <- typeCheck env f
     -- Check that the arguments and parameters are of same length
     if length args == length reqArgs
     then let
         -- Check that arguments and parameters are of same type
-        checkArgs y = typeCheck env y >>= (\(t, _) -> return t)
-        getCons y = typeCheck env y >>= (\(_, c) -> return c)
-        aTypes = map (transformEitherMaybe . checkArgs) args
-        cons = map (transformEitherMaybe . getCons) args
-        newEnv = filterDefiniteConstraints $
-            map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
-        resolvedArgTypes = collectM aTypes >>= Just . map (resolve newEnv)
-        resolved  = map (resolve newEnv) reqArgs
+        argType = let
+            checkArgs y = typeCheck env y >>= (\(t, _) -> return t)
+            in map (transformEitherMaybe . checkArgs) args
+        -- Collect constraints
+        newConstraints = let
+            constraintsFromArgs = map
+                (\x -> transformEitherMaybe $ typeCheck env x >>= (\(_, s) -> return s))
+                args
+            otherConstraints = map
+                (\(p, ma) -> ma >>= unify p >>= consolidate)
+                (zip reqArgs argType)
+            in Map.union  -- Join the constraints together
+                (filterDefiniteConstraints constraintsFromArgs)
+                (filterDefiniteConstraints otherConstraints)
+        -- Resolve argument and parameter types using above constraints
+        resolvedArgTypes = collectM argType >>= Just . map (resolve newConstraints)
+        resolved  = map (resolve newConstraints) reqArgs
+        -- Check that the resolved argument and parameter types match
         in if Just resolved == resolvedArgTypes
             then case functionReturn of
                 p@(TypeVar _) ->
-                    case Map.lookup p newEnv of
-                        Just val -> Right (val, newEnv)
+                    case Map.lookup p newConstraints of
+                        Just val -> Right (val, newConstraints)
                         Nothing  -> Left errorUnboundIdentifier
-                _ -> Right (functionReturn, newEnv)
+                _ -> Right (functionReturn, newConstraints)
             else Left errorCallWrongArgType
     else Left errorCallWrongArgNumber
 
+-- Handle Call Error
 typeCheck _ (Call _ _) = Left errorCallNotAFunction
 
--- Task 2 typechecking for lambda functions
+-- Handle Lambda
 typeCheck env (Lambda names body) = do
     -- Make an environment with 'fresh variables'
     let argTypes = [nameToTypeVar x | x <- names]
         tempEnv = Map.union env $ Map.fromList $ zip names argTypes
     -- Typecheck the body with the environment with fresh variables
-    (retType, newEnv)  <- typeCheck tempEnv body
-    let resolvedArgs = map (resolve newEnv) argTypes
-        resolvedRet = resolve newEnv retType
-    Right (Function resolvedArgs resolvedRet, newEnv)
+    (retType, newConstraints)  <- typeCheck tempEnv body
+    let resolvedArgs = map (resolve newConstraints) argTypes
+        resolvedRet = resolve newConstraints retType
+    Right (Function resolvedArgs resolvedRet, newConstraints)
 
 buildTypeEnv :: TypeEnv -> [(String, Expr)] -> Either String TypeEnv
 buildTypeEnv env = foldl buildTypeEnvHelper (Right env)
@@ -245,7 +265,13 @@ type TypeConstraint = (Type, Type)
 -- | A set of type constraints. Used to accumulate multiple constraints.
 type TypeConstraints = Set.Set TypeConstraint
 
--- You should choose a different name representation for this type, or remove it entirely.
+{-
+The renamed and modified return type for Consolidate.
+This is a Map of types mainly to handle and help easily resolve what types
+TypeVars are supposed to be.
+For example, fromList [(TypeVar "t1", Int_)] means that TypeVar t1 should
+later be resolved to be of type Int_.
+-}
 type ConstraintMap = Map.Map Type Type
 
 
@@ -267,8 +293,6 @@ unify t1@(TypeVar _) t2 = Just (Set.fromList [(t1, t2)])
 unify t1 t2@(TypeVar _) = Just (Set.fromList [(t2, t1)])
 unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
-unify Int_ Bool_ = Nothing
-unify Bool_ Int_ = Nothing
 unify (Function p1 r1) (Function p2 r2) =
   -- Check parameters of equal length, unify their types
   if length p1 == length p2
@@ -282,7 +306,9 @@ unify _ _ = Nothing
 
 -- | Takes the generated constraints and processs them.
 -- Returns `Nothing` if the constraints cannot be satisfied (this is a type error).
--- Note that the returned value will depend on your representation of `ConstraintSets`.
+-- The returned value is ConstraintMap to make passing constraints along easier
+-- for resolving types later on in prog.
+-- Sets have a powerful no-duplicates property which we use here.
 consolidate :: TypeConstraints -> Maybe ConstraintMap
 consolidate constraints =
   let constraintTypeVars = map fst (Set.toList constraints)
@@ -303,11 +329,12 @@ resolve _ Bool_                             = Bool_
 resolve constraints t@(TypeVar _)           =
   -- Lookup and recursively resolve if needed, return type based on constraints
   case Map.lookup t constraints of
-    Just newT@(TypeVar _) -> resolve constraints newT
-    Just ret              -> ret
-    Nothing               -> t
+    Just newT@(TypeVar _) -> resolve constraints newT -- matched another TypeVar
+    Just ret              -> ret  -- matched some other type
+    Nothing               -> t  -- no constraints, generic
 
 -- Don't forget about this case: the function type might contain
 -- type variables.
+-- Resolves the params and return type accordingly
 resolve constraints (Function params rType) =
   Function (map (resolve constraints) params) (resolve constraints rType)
