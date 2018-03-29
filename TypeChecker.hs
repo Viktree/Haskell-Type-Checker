@@ -266,7 +266,7 @@ type TypeConstraint = (Type, Type)
 type TypeConstraints = Set.Set TypeConstraint
 
 {-
-The renamed and modified type for Consolidate.
+The renamed and modified return type for Consolidate.
 This is a Map of types mainly to handle and help easily resolve what types
 TypeVars are supposed to be.
 For example, fromList [(TypeVar "t1", Int_)] means that TypeVar t1 should
