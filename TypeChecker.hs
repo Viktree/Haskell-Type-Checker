@@ -171,7 +171,9 @@ typeCheck env (Call f@(Identifier _) args) = do
     then let
         -- Check that arguments and parameters are of same type
         checkArgs y = typeCheck env y >>= (\(t, _) -> return t)
+        getCons y = typeCheck env y >>= (\(_, c) -> return c)
         aTypes = map (transformEitherMaybe . checkArgs) args
+        cons = map (transformEitherMaybe . getCons) args
         newEnv = filterDefiniteConstraints $
             map (\(p, ma) -> ma >>= unify p >>= consolidate) (zip reqArgs aTypes)
         resolvedArgTypes = collectM aTypes >>= Just . map (resolve newEnv)
@@ -265,12 +267,8 @@ unify t1@(TypeVar _) t2 = Just (Set.fromList [(t1, t2)])
 unify t1 t2@(TypeVar _) = Just (Set.fromList [(t2, t1)])
 unify Int_ Int_ = Just Set.empty
 unify Bool_ Bool_ = Just Set.empty
-unify Int_ Bool_ = do
-  _ <- return (show "int bool")
-  Nothing
-unify Bool_ Int_ = do
-  _ <- return (show "bool int")
-  Nothing
+unify Int_ Bool_ = Nothing
+unify Bool_ Int_ = Nothing
 unify (Function p1 r1) (Function p2 r2) =
   -- Check parameters of equal length, unify their types
   if length p1 == length p2
