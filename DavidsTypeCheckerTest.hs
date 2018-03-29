@@ -136,6 +136,20 @@ test_LambdaIf =
 
         Right (Function [Bool_, TypeVar a, TypeVar b] (TypeVar c)) -> a == b && b == c
 
+test_LambdaCall =
+  runTypeCheck (JustExpr $
+  Lambda ["x"]
+    (Call (Identifier "and")
+      [Call (Identifier "not") [Identifier "x"],
+        Call (Identifier "not") [Identifier "x"]])) == Right(Function [Bool_] Bool_)
+
+test_LambdaMath =
+  runTypeCheck (JustExpr $
+  Lambda ["x", "y", "z"]
+    (Call (Identifier "*")
+      [Call (Identifier "identity") [Identifier "x"],
+        Call (Identifier "+") [Identifier "y", Identifier "z"]]))
+        == Right(Function [Int_, Int_, Int_] Int_)
 
 -- Note that the type error in the body "propagates up",
 -- just like other kinds of expressions.
@@ -181,3 +195,5 @@ main = do
     doTest "lambda: type inference for an If expression (sample test)" test_LambdaIf
     doTest "lambda: type-check error in body of function (sample test)" test_LambdaBodyTypeError
     doTest "lambda: a simple type inference error (sample test)" test_LambdaBadUnify
+    doTest "lambda: and call with two nots on x" test_LambdaCall
+    doTest "lambda: a function that does x * (y + z)" test_LambdaMath
